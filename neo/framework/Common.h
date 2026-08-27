@@ -270,4 +270,9 @@ extern idCommon *		common;
 float Com_GetTicFraction( void );
 void Com_SetFrameSchedule( int framerateHz );
 
+/* Startup, one step per call, so a caller that must return promptly can
+   drive it across frames instead of blocking for the whole thing.
+   Returns true while steps remain. */
+bool Com_InitIncremental( int argc, char **argv );
+
 #endif /* !__COMMON_H__ */

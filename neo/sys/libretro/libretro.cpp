@@ -2490,8 +2490,22 @@ void retro_run(void)
       glsm_ctl(GLSM_CTL_STATE_BIND, NULL);
 
 	if (first_boot) {
-		network_init();
-		common->Init( fake_argc, fake_argv );
+		/* Startup a step at a time.  Running all of it here is what froze
+		 * the frontend during the first load: retro_run has to return for
+		 * the interface to breathe, and the whole of common->Init used to
+		 * happen before it did.  Present a duplicate frame between steps
+		 * so the frontend has something to show and something to poll. */
+		static bool boot_started = false;
+		if (!boot_started) {
+			network_init();
+			boot_started = true;
+		}
+		if (Com_InitIncremental( fake_argc, fake_argv )) {
+			if (!libretro_shared_context)
+				glsm_ctl(GLSM_CTL_STATE_UNBIND, NULL);
+			video_cb(NULL, scr_width, scr_height, 0);
+			return;
+		}
 		first_boot = false;
 		update_variables(false);
 		gp_layout_set_bind(pending_layout);

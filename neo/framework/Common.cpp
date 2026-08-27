@@ -154,6 +154,14 @@ public:
 	// DG end
 
 	void						InitGame( void );
+	bool						InitGameStep( int step );   // one step per call; true while more remain
+	void						InitAfterGame( void );      // the part of Init that follows InitGame
+	/* Two locals of the old single-function InitGame that are set in one
+	 * step and read in a later one.  Promoted to members rather than
+	 * restructured: moving the code that reads them would be a behaviour
+	 * change hiding inside a mechanical split. */
+	bool						initSysDetect;
+	idCmdArgs					initSpecArgs;
 	void						ShutdownGame( bool reloading );
 
 	// localization
@@ -2314,6 +2322,40 @@ idCommonLocal::InitGame
 =================
 */
 /*
+==================
+Com_InitIncremental
+
+Startup, one step per call, for callers that must not block - which on
+this port is retro_run(): everything here used to run inside the single
+frame guarded by first_boot, and a frontend that is not called is a
+frontend that is frozen.  The map load solved the same problem the same
+way.
+
+The first call runs Init() with the game-init portion suppressed, so
+every cheap prologue step - cvars, console, SIMD, commands - still
+happens together as it always has; subsequent calls each run one step of
+InitGame.  Returns true while more remain.
+==================
+*/
+bool comInitIncremental = false;
+static int comInitStep = -1;
+
+bool Com_InitIncremental( int argc, char **argv ) {
+	if ( comInitStep < 0 ) {
+		comInitIncremental = true;
+		common->Init( argc, argv );
+		comInitStep = 0;
+		return true;
+	}
+	if ( commonLocal.InitGameStep( comInitStep++ ) ) {
+		return true;
+	}
+	comInitIncremental = false;
+	commonLocal.InitAfterGame();
+	return false;
+}
+
+/*
 =================
 idCommonLocal::Init
 =================
@@ -2398,7 +2440,22 @@ void idCommonLocal::Init( int argc, char **argv ) {
 		InitCommands();
 
 		// game specific initialization
+		if ( comInitIncremental ) {
+			/* the caller drives InitGame one step per frame and calls
+			   InitAfterGame() when the last step finishes */
+			return;
+		}
 		InitGame();
+	}
+	catch( idException & ) {
+		Sys_Error( "Error during initialization" );
+	}
+
+	InitAfterGame();
+}
+
+void idCommonLocal::InitAfterGame( void ) {
+	try {
 
 		// don't add startup commands if no CD key is present
 #if ID_ENFORCE_KEY
@@ -2490,19 +2547,56 @@ void idCommonLocal::Shutdown( void ) {
 
 }
 
-void idCommonLocal::InitGame( void ) {
+/*
+==================
+idCommonLocal::InitGameStep
+
+InitGame, one step per call.  The whole of it used to run inside the
+single retro_run() guarded by first_boot, so a startup that takes
+seconds is seconds in which the frontend is never called and its
+interface is frozen - the same problem the map load solved by
+splitting into per-frame phases, and this follows that pattern.
+
+Returns true while more steps remain.  The step bodies are the
+original function cut at line boundaries and nothing else: they were
+checked to reconstitute it byte for byte before being moved, and
+InitGame() below still runs them back to back, so the synchronous
+path is preserved exactly for any caller that wants it.
+==================
+*/
+bool idCommonLocal::InitGameStep( int step ) {
+	switch ( step ) {
+	case 0:
+	{
+
 	// initialize the file system
 	LoadStepBegin();
+	}
+		return true;
+	case 1:
+	{
+		LoadStepBegin();
 	fileSystem->Init();
 	LoadStepEnd( "fs" );
 
 	// initialize the declaration manager
 	LoadStepBegin();
+		LoadStepEnd( "fs" );
+	}
+		return true;
+	case 2:
+	{
+		LoadStepBegin();
 	declManager->Init();
 	LoadStepEnd( "decls" );
-
+		LoadStepEnd( "decls" );
+	}
+		return true;
+	case 3:
+	{
+		LoadStepBegin();
 	idFile *file = fileSystem->OpenExplicitFileRead( fileSystem->RelativePathToOSPath( CONFIG_SPEC, "fs_configpath" ) );
-	bool sysDetect = ( file == NULL );
+	initSysDetect = ( file == NULL );
 	if ( file ) {
 		fileSystem->CloseFile( file );
 	} else {
@@ -2510,7 +2604,7 @@ void idCommonLocal::InitGame( void ) {
 		fileSystem->CloseFile( file );
 	}
 
-	idCmdArgs args;
+	idCmdArgs &args = initSpecArgs;
 
 	if (com_machineSpec.GetInteger() == -1)
 		SetMachineSpec();
@@ -2518,11 +2612,23 @@ void idCommonLocal::InitGame( void ) {
 
 	// initialize the renderSystem data structures, but don't start OpenGL yet
 	LoadStepBegin();
+		LoadStepEnd( "spec" );
+	}
+		return true;
+	case 4:
+	{
+		LoadStepBegin();
 	renderSystem->Init();
 	LoadStepEnd( "render" );
 
 	// initialize string database right off so we can use it for loading messages
 	LoadStepBegin();
+		LoadStepEnd( "render" );
+	}
+		return true;
+	case 5:
+	{
+		LoadStepBegin();
 	InitLanguageDict();
 	LoadStepEnd( "lang" );
 
@@ -2530,6 +2636,12 @@ void idCommonLocal::InitGame( void ) {
 
 	// load the font, etc
 	LoadStepBegin();
+		LoadStepEnd( "lang" );
+	}
+		return true;
+	case 6:
+	{
+		LoadStepBegin();
 	console->LoadGraphics();
 	LoadStepEnd( "console" );
 
@@ -2541,6 +2653,12 @@ void idCommonLocal::InitGame( void ) {
 	PrintLoadingMessage( common->GetLanguageDict()->GetString( "#str_04345" ) );
 
 	// exec the startup scripts
+		LoadStepEnd( "console" );
+	}
+		return true;
+	case 7:
+	{
+		LoadStepBegin();
 	cmdSystem->BufferCommandText( CMD_EXEC_APPEND, "exec editor.cfg\n" );
 	cmdSystem->BufferCommandText( CMD_EXEC_APPEND, "exec default.cfg\n" );
 
@@ -2609,6 +2727,12 @@ void idCommonLocal::InitGame( void ) {
 
 	// init the user command input code
 	LoadStepBegin();
+		LoadStepEnd( "config" );
+	}
+		return true;
+	case 8:
+	{
+		LoadStepBegin();
 	usercmdGen->Init();
 	LoadStepEnd( "input" );
 
@@ -2623,6 +2747,12 @@ void idCommonLocal::InitGame( void ) {
 
 	// init async network
 	LoadStepBegin();
+		LoadStepEnd( "input" );
+	}
+		return true;
+	case 9:
+	{
+		LoadStepBegin();
 	idAsyncNetwork::Init();
 	LoadStepEnd( "net" );
 
@@ -2659,15 +2789,27 @@ void idCommonLocal::InitGame( void ) {
 	// have to do this twice.. first one sets the correct r_mode for the renderer init
 	// this time around the backend is all setup correct.. a bit fugly but do not want
 	// to mess with all the gl init at this point.. an old vid card will never qualify for
-	if ( sysDetect ) {
+	if ( initSysDetect ) {
 		SetMachineSpec();
-		Com_ExecMachineSpec_f( args );
+		Com_ExecMachineSpec_f( initSpecArgs );
 		// OpenAL-era: fast machines defaulted to 5.1. s_numberOfSpeakers
 		// is now the display value of the repurposed Surround/HRTF menu
 		// row - a headphone preference no machine spec can detect, so
 		// leave it alone.
 		cmdSystem->BufferCommandText( CMD_EXEC_NOW, "s_restart\n" );
 		cmdSystem->ExecuteCommandBuffer();
+	}
+		LoadStepEnd( "net" );
+	}
+		return true;
+	default:
+		break;
+	}
+	return false;
+}
+
+void idCommonLocal::InitGame( void ) {
+	for ( int step = 0; InitGameStep( step ); step++ ) {
 	}
 }
 
