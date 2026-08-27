@@ -2581,7 +2581,6 @@ bool idCommonLocal::InitGameStep( int step ) {
 
 	// initialize the declaration manager
 	LoadStepBegin();
-		LoadStepEnd( "fs" );
 	}
 		return true;
 	case 2:
@@ -2589,7 +2588,6 @@ bool idCommonLocal::InitGameStep( int step ) {
 		LoadStepBegin();
 	declManager->Init();
 	LoadStepEnd( "decls" );
-		LoadStepEnd( "decls" );
 	}
 		return true;
 	case 3:
@@ -2623,7 +2621,6 @@ bool idCommonLocal::InitGameStep( int step ) {
 
 	// initialize string database right off so we can use it for loading messages
 	LoadStepBegin();
-		LoadStepEnd( "render" );
 	}
 		return true;
 	case 5:
@@ -2636,7 +2633,6 @@ bool idCommonLocal::InitGameStep( int step ) {
 
 	// load the font, etc
 	LoadStepBegin();
-		LoadStepEnd( "lang" );
 	}
 		return true;
 	case 6:
@@ -2653,7 +2649,6 @@ bool idCommonLocal::InitGameStep( int step ) {
 	PrintLoadingMessage( common->GetLanguageDict()->GetString( "#str_04345" ) );
 
 	// exec the startup scripts
-		LoadStepEnd( "console" );
 	}
 		return true;
 	case 7:
@@ -2747,7 +2742,6 @@ bool idCommonLocal::InitGameStep( int step ) {
 
 	// init async network
 	LoadStepBegin();
-		LoadStepEnd( "input" );
 	}
 		return true;
 	case 9:
@@ -2773,17 +2767,34 @@ bool idCommonLocal::InitGameStep( int step ) {
 	PrintLoadingMessage( common->GetLanguageDict()->GetString( "#str_04349" ) );
 
 	// initialize the user interfaces
+	}
+		return true;
+	case 10:
+	{
+		LoadStepBegin();
 	uiManager->Init();
 
 	PrintLoadingMessage( common->GetLanguageDict()->GetString( "#str_04350" ) );
 
 	// initialize the game object
+		LoadStepEnd( "ui" );
+	}
+		return true;
+	case 11:
+	{
+		LoadStepBegin();
 	if ( game != NULL )
 		game->Init();
 
 	PrintLoadingMessage( common->GetLanguageDict()->GetString( "#str_04351" ) );
 
 	// init the session
+		LoadStepEnd( "game" );
+	}
+		return true;
+	case 12:
+	{
+		LoadStepBegin();
 	session->Init();
 
 	// have to do this twice.. first one sets the correct r_mode for the renderer init
@@ -2799,7 +2810,7 @@ bool idCommonLocal::InitGameStep( int step ) {
 		cmdSystem->BufferCommandText( CMD_EXEC_NOW, "s_restart\n" );
 		cmdSystem->ExecuteCommandBuffer();
 	}
-		LoadStepEnd( "net" );
+		LoadStepEnd( "session" );
 	}
 		return true;
 	default:
