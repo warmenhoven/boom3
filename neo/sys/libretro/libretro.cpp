@@ -1265,10 +1265,23 @@ static void update_variables(bool startup)
 		cvarSystem->SetCVarFloat("s_headroom_dB", pad);
 	}
 
+	/* Say when the curve actually changes.  There are three links in the
+	 * chain between picking one and seeing it - the option is read here,
+	 * the composite is rebuilt in hdr_arb_ready, and the rebuilt program
+	 * is bound in hdr_present - and a report of "nothing happens" cannot
+	 * distinguish them.  The rebuild already logs; this is the link
+	 * before it, so one curve change in a log localises the break. */
 	var.key = "doom_hdr_rolloff";
 	var.value = NULL;
-	if (environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &var) && var.value)
-			hdr_rolloff_mode = hdr_rolloff_from_string(var.value);
+	if (environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &var) && var.value) {
+		int want = hdr_rolloff_from_string(var.value);
+		if (want != hdr_rolloff_mode) {
+			if (log_cb)
+				log_cb(RETRO_LOG_INFO, "[boom3] HDR: curve %d -> %d (%s)\n",
+						hdr_rolloff_mode, want, var.value);
+			hdr_rolloff_mode = want;
+		}
+	}
 
 	var.key = "doom_hdr_filmiclog_contrast";
 	var.value = NULL;
