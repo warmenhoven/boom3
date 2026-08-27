@@ -145,7 +145,11 @@ struct retro_core_option_v2_definition option_defs_us[] = {
       NULL,
       "24-bit is the standard XRGB8888 output. 30-bit Color (HDR) renders "
       "into a 10-bit surface and emits HDR10 (PQ, Rec.2020): use with the "
-      "frontend's HDR output enabled on an HDR display. The conversion "
+      "frontend's HDR output enabled on an HDR display, and with a video "
+      "driver that can present one - glcore, vulkan or d3d11 and up. The "
+      "legacy gl driver refuses the HDR10 surface, and the core then runs "
+      "the 24-bit tone-mapped path so the display transform still applies. "
+      "The conversion "
       "honors the frontend's paper white, peak luminance, and Colour Boost "
       "settings, and dithers the 10-bit quantization. 24-bit tone-mapped "
       "runs that same scene pipeline - curves, bloom, every enhancement - "

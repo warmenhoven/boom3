@@ -2238,11 +2238,34 @@ bool retro_load_game(const struct retro_game_info *info)
 				hdr_pq_output = true;
 				if (log_cb)
 					log_cb(RETRO_LOG_INFO, "[boom3] 30-bit HDR10 output enabled\n");
-			} else if (log_cb) {
-				log_cb(RETRO_LOG_WARN, "[boom3] frontend refused HDR10_2101010; using 24-bit\n");
+			} else {
+				/* The frontend cannot give us an HDR10 surface - RetroArch
+				 * implements HDR output for glcore, vulkan and d3d11 and up,
+				 * but not for the legacy gl driver.  Falling back to plain
+				 * 24-bit turned the whole scene pipeline off with it, so the
+				 * Display Transform, the supersample resolve and everything
+				 * else silently did nothing and the only clue was one warning
+				 * line.  Fall back to the tone-mapped path instead: same
+				 * pipeline, same curves, encoded to the stock surface.  It is
+				 * what was asked for minus the part the driver cannot do. */
+				hdr_output_active = true;
+				hdr_pq_output = false;
+				if (log_cb)
+					log_cb(RETRO_LOG_WARN, "[boom3] this video driver has no HDR10 "
+							"surface; running the 24-bit tone-mapped pipeline instead, "
+							"so the display transform still applies\n");
 			}
 		}
 	}
+	/* Say plainly which of the three output paths is running.  Working
+	 * this out from the absence of an effect cost a bug report. */
+	if (log_cb)
+		log_cb(RETRO_LOG_INFO, "[boom3] output path: %s\n",
+				!hdr_output_active ? "stock 24-bit, no scene pipeline - "
+						"display transform and its options have no effect" :
+				hdr_pq_output ? "30-bit HDR10, PQ encode" :
+				"24-bit tone-mapped, full scene pipeline");
+
 	if (hdr_output_active) {
 		fmt = RETRO_PIXEL_FORMAT_HDR10_2101010;
 		struct retro_variable pv = { "doom_hdr_precision", NULL };
