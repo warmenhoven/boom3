@@ -2277,6 +2277,43 @@ void idCommonLocal::SetMachineSpec( void ) {
 #endif // UINTPTR_MAX defined
 
 /*
+==================
+Load timing
+
+Startup and map loads both run inside a single retro_run() when they run
+at all, so every millisecond they spend is a millisecond the frontend is
+not being called and its interface is frozen.  The map load was already
+split into per-frame phases for exactly that reason; startup was not,
+and before splitting it too it is worth knowing where the time actually
+goes rather than guessing from the shape of the code.
+
+The clock is deliberately Core_RealMicroseconds and not either of the
+millisecond helpers next to it: those derive from the frame counter, so
+they do not advance inside a frame and would measure every step as zero.
+==================
+*/
+static int64_t loadStepStart = 0;
+static idStr   loadStepReport;
+
+static void LoadStepBegin( void ) {
+	loadStepStart = Core_RealMicroseconds();
+}
+
+static void LoadStepEnd( const char *name ) {
+	const int64_t now = Core_RealMicroseconds();
+	const double ms = ( now - loadStepStart ) / 1000.0;
+	loadStepStart = now;
+	if ( ms >= 1.0 ) {
+		loadStepReport += va( "%s %.0fms  ", name, ms );
+	}
+}
+
+/*
+=================
+idCommonLocal::InitGame
+=================
+*/
+/*
 =================
 idCommonLocal::Init
 =================
@@ -2389,6 +2426,13 @@ void idCommonLocal::Init( int argc, char **argv ) {
 		console->LoadHistory();
 
 		com_fullyInitialized = true;
+
+		/* One line, once, naming where startup spent its time.  Every
+		 * millisecond here is a millisecond retro_run did not return. */
+		if ( loadStepReport.Length() ) {
+			Printf( "startup: %s\n", loadStepReport.c_str() );
+			loadStepReport.Clear();
+		}
 	}
 
 	catch( idException & ) {
@@ -2446,17 +2490,16 @@ void idCommonLocal::Shutdown( void ) {
 
 }
 
-/*
-=================
-idCommonLocal::InitGame
-=================
-*/
 void idCommonLocal::InitGame( void ) {
 	// initialize the file system
+	LoadStepBegin();
 	fileSystem->Init();
+	LoadStepEnd( "fs" );
 
 	// initialize the declaration manager
+	LoadStepBegin();
 	declManager->Init();
+	LoadStepEnd( "decls" );
 
 	idFile *file = fileSystem->OpenExplicitFileRead( fileSystem->RelativePathToOSPath( CONFIG_SPEC, "fs_configpath" ) );
 	bool sysDetect = ( file == NULL );
@@ -2474,18 +2517,26 @@ void idCommonLocal::InitGame( void ) {
 	Com_ExecMachineSpec_f( args );
 
 	// initialize the renderSystem data structures, but don't start OpenGL yet
+	LoadStepBegin();
 	renderSystem->Init();
+	LoadStepEnd( "render" );
 
 	// initialize string database right off so we can use it for loading messages
+	LoadStepBegin();
 	InitLanguageDict();
+	LoadStepEnd( "lang" );
 
 	PrintLoadingMessage( common->GetLanguageDict()->GetString( "#str_04344" ) );
 
 	// load the font, etc
+	LoadStepBegin();
 	console->LoadGraphics();
+	LoadStepEnd( "console" );
 
 	// init journalling, etc
+	LoadStepBegin();
 	eventLoop->Init();
+	LoadStepEnd( "events" );
 
 	PrintLoadingMessage( common->GetLanguageDict()->GetString( "#str_04345" ) );
 
@@ -2557,17 +2608,23 @@ void idCommonLocal::InitGame( void ) {
 	cvarSystem->ClearModifiedFlags( CVAR_ARCHIVE );
 
 	// init the user command input code
+	LoadStepBegin();
 	usercmdGen->Init();
+	LoadStepEnd( "input" );
 
 	PrintLoadingMessage( common->GetLanguageDict()->GetString( "#str_04346" ) );
 
 	// start the sound system, but don't do any hardware operations yet
+	LoadStepBegin();
 	soundSystem->Init();
+	LoadStepEnd( "sound" );
 
 	PrintLoadingMessage( common->GetLanguageDict()->GetString( "#str_04347" ) );
 
 	// init async network
+	LoadStepBegin();
 	idAsyncNetwork::Init();
+	LoadStepEnd( "net" );
 
 #ifdef	ID_DEDICATED
 	idAsyncNetwork::server.InitPort();
@@ -2577,7 +2634,9 @@ void idCommonLocal::InitGame( void ) {
 	} else {
 		// init OpenGL, which will open a window and connect sound and input hardware
 		PrintLoadingMessage( common->GetLanguageDict()->GetString( "#str_04348" ) );
-		InitRenderSystem();
+		LoadStepBegin();
+	InitRenderSystem();
+	LoadStepEnd( "rendersys" );
 	}
 #endif
 

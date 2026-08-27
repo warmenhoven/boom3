@@ -592,6 +592,10 @@ retro_environment_t environ_cb;
 static retro_input_poll_t poll_cb;
 static retro_input_state_t input_cb;
 retro_perf_get_time_usec_t perf_get_time_usec = NULL;
+
+int64_t Core_RealMicroseconds( void ) {
+	return perf_get_time_usec ? (int64_t)perf_get_time_usec() : 0;
+}
 static bool libretro_supports_bitmasks = false;
 
 static void audio_upload_frame(void);

@@ -111,6 +111,12 @@ void			Sys_DebugVPrintf( const char *fmt, va_list arg );
 // on floating point rounding. See sys/libretro/stubs.cpp.
 int64_t			Core_MicrosecondsPrecise( void );
 double			Core_MillisecondsPrecise( void );
+
+/* Real wall clock, from the frontend's performance interface.  Distinct
+   from the two above on purpose: those derive from the frame counter, so
+   they do not advance inside a single frame and cannot measure anything
+   that blocks one.  Returns 0 if the frontend offers no perf interface. */
+int64_t			Core_RealMicroseconds( void );
 uint64_t		Core_FrameCount( void );
 void			Core_AdvanceFrame( void );
 void			Core_SetFramerate( int fps );

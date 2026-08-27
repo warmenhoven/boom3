@@ -1618,7 +1618,13 @@ because the phases themselves call it.
 ===============
 */
 void idSessionLocal::MapLoadPhaseMark( const char *phase ) {
-	int now = Core_Milliseconds();
+	/* A real clock, not Core_Milliseconds.  That one is derived from the
+	   frame counter - base plus frames over rate - so it advances only
+	   when a frame does, and every phase here runs in its own frame.  A
+	   phase that burned two hundred milliseconds of CPU and one that
+	   burned two both reported one frame period, which is the one thing
+	   this report exists to tell apart. */
+	int now = (int)( Core_RealMicroseconds() / 1000 );
 	int probes, paks, views;
 	fileSystem->GetIOStats( probes, paks, views );
 	fileSystem->ResetIOStats();
@@ -1627,7 +1633,7 @@ void idSessionLocal::MapLoadPhaseMark( const char *phase ) {
 }
 
 void idSessionLocal::MapLoad_Begin() {
-	mapLoadTotalStartMs = mapLoadPhaseStartMs = Core_Milliseconds();
+	mapLoadTotalStartMs = mapLoadPhaseStartMs = (int)( Core_RealMicroseconds() / 1000 );
 	mapLoadPhaseReport = "";
 	fileSystem->ResetIOStats();
 
@@ -1941,7 +1947,8 @@ void idSessionLocal::MapLoad_MediaFinish() {
 	}
 	MapLoadPhaseMark( "media" );
 	common->Printf( "map load I/O census:%s | total %dms (phase ms(osProbeMiss/pakOpen/viewBorrow))\n",
-			mapLoadPhaseReport.c_str(), Core_Milliseconds() - mapLoadTotalStartMs );
+			mapLoadPhaseReport.c_str(),
+			(int)( Core_RealMicroseconds() / 1000 ) - mapLoadTotalStartMs );
 
 }
 
