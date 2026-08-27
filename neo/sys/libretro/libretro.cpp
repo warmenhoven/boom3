@@ -2239,9 +2239,14 @@ bool retro_load_game(const struct retro_game_info *info)
 				if (log_cb)
 					log_cb(RETRO_LOG_INFO, "[boom3] 30-bit HDR10 output enabled\n");
 			} else {
-				/* The frontend cannot give us an HDR10 surface - RetroArch
-				 * implements HDR output for glcore, vulkan and d3d11 and up,
-				 * but not for the legacy gl driver.  Falling back to plain
+				/* The frontend cannot give us an HDR10 surface.  Which
+				 * frontends and drivers can is not something to guess at:
+				 * RetroArch's gl driver on Windows accepts the format and
+				 * presents it through an FP16 scRGB backbuffer, converting
+				 * our PQ Rec.2020 output on the way, which is the opposite
+				 * of what a first reading of the release notes suggests.
+				 * The only thing worth acting on is the answer this call
+				 * gives.  Falling back to plain
 				 * 24-bit turned the whole scene pipeline off with it, so the
 				 * Display Transform, the supersample resolve and everything
 				 * else silently did nothing and the only clue was one warning
