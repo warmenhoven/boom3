@@ -4314,6 +4314,20 @@ static const char hdr_karis_fetch[] =
    transform - ACES 2.0 - already decides its own top end, and putting
    this on top of one would compress a range that has already been
    compressed. */
+/* Zero headroom used to mean "discard the curve and hard clamp": the
+   last two instructions here select between the curve result and a plain
+   MIN of the linear value, and below 1.0001 of headroom they took the
+   clamp.  The curve is the only thing that differs between one roll-off
+   program and the next - a diff of two generated composites touches
+   nothing but the block that computes t - so that made every curve
+   produce an identical picture on any display whose reported peak was no
+   brighter than its paper white, with the full ACES 2.0 transform the
+   only exception because it reshapes absolute luminance earlier.
+
+   Only the shoulder needs headroom.  The curve reshapes the range below
+   paper white as well, which is the entire point of ACES, Hejl, AgX and
+   Neutral, so the no-headroom case keeps the curve and merely clamps
+   it. */
 #define HDR_ARB_COMPOSITE_SHOULDER \
 	/* shoulder above paper white, carrying the curve out to H:
 	   1 + e*A*slope/(e + A), taken where e > 0 */ \
@@ -4330,7 +4344,7 @@ static const char hdr_karis_fetch[] =
 	"SUB v, lin, 1.0;\n" \
 	"CMP r, v, t, u;\n" \
 	/* no headroom: plain min(v, 1) */ \
-	"MIN t, lin, 1.0;\n" \
+	"MIN t, t, 1.0;\n" \
 	"SUB v.x, program.env[0].y, 1.0001;\n" \
 	"CMP lin, v.x, t, r;\n" \
 	
