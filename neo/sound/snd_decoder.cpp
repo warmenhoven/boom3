@@ -179,6 +179,7 @@ public:
 
 private:
 	bool					failed;				// set if decoding failed
+	bool					warnedSeekWrap;		// one wrap warning per sample, not one per lap
 	int						lastFormat;			// last format being decoded
 	idSoundSample *			lastSample;			// last sample being decoded
 	int						lastSampleOffset;	// last offset into the decoded sample
@@ -348,6 +349,7 @@ void idSampleDecoderLocal::Clear( void ) {
 	   armed state there was exactly the bug. Fresh-slot initialization
 	   happens once in idSampleDecoder::Alloc. */
 	failed = false;
+	warnedSeekWrap = false;
 	lastFormat = WAVE_FORMAT_TAG_PCM;
 	lastSample = NULL;
 	lastSampleOffset = 0;
@@ -673,10 +675,34 @@ int idSampleDecoderLocal::DecodeOGG( idSoundSample *sample, int outputOffset, in
 					/ (uint64_t)snd_SampleRate();
 		}
 		if ( !audio_transfer_seek( atHandle, AUDIO_TYPE_VORBIS, srcFrame ) ) {
-			common->Warning( "idSampleDecoderLocal::DecodeOGG() seek(%d) for %s failed\n",
-					outputOffset / sample->objectInfo.nChannels, sample->name.c_str() );
-			failed = true;
-			return 0;
+			/* A target past the last decodable frame is a wrap, not a broken
+			 * decoder.  The looping path already reduces the offset modulo
+			 * LengthInOutputSamples(), but that length comes from the Ogg
+			 * header scaled to the output rate, and the scaling can land a
+			 * frame or two beyond what the packets actually yield - which is
+			 * why the failures cluster near the end of a loop.
+			 *
+			 * Treating that as failure was the real damage: the failed flag
+			 * is permanent, and every later Decode of this sample memsets
+			 * silence, so one overshoot at a wrap point killed the sound for
+			 * the rest of the session.  A looping sample that overshoots
+			 * should simply start its next lap, so retry at the beginning and
+			 * only give up if the stream cannot be rewound either. */
+			if ( srcFrame == 0
+					|| !audio_transfer_seek( atHandle, AUDIO_TYPE_VORBIS, 0 ) ) {
+				common->Warning( "idSampleDecoderLocal::DecodeOGG() seek(%d) for %s failed\n",
+						outputOffset / sample->objectInfo.nChannels, sample->name.c_str() );
+				failed = true;
+				return 0;
+			}
+			/* Warn once per sample: at a loop boundary this would otherwise
+			 * repeat every wrap, for as long as the sound plays. */
+			if ( !warnedSeekWrap ) {
+				warnedSeekWrap = true;
+				common->Warning( "idSampleDecoderLocal::DecodeOGG() seek(%d) for %s "
+						"is past the end; wrapping to the start\n",
+						outputOffset / sample->objectInfo.nChannels, sample->name.c_str() );
+			}
 		}
 		/*
 		   The resampler's filter history and any carried-over output frames

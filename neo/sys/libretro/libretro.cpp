@@ -6532,6 +6532,34 @@ static void hdr_present( GLuint dstFbo ) {
 	if ( H < 1.0f )
 		H = 1.0f;   /* the contract's zero-headroom clamp */
 
+	/* Headroom is what every roll-off curve shapes, and when there is
+	 * none the composite discards the curve outright - the shoulder ends
+	 * with SUB v.x, env[0].y, 1.0001 / CMP lin, v.x, t, r, which selects a
+	 * plain clamp over the curve result whenever H is one.  Every curve
+	 * then produces the same picture, and the only one that still looks
+	 * different is the full ACES 2.0 transform, because it reshapes
+	 * absolute luminance ahead of that gate rather than only the range
+	 * above paper white.  That is a confusing thing to discover by
+	 * switching curves and seeing nothing, so say it. */
+	{
+		static float lastPW = -1.0f, lastMax = -1.0f;
+		if ( paperWhite != lastPW || maxNits != lastMax ) {
+			lastPW = paperWhite;
+			lastMax = maxNits;
+			if ( log_cb ) {
+				log_cb( RETRO_LOG_INFO, "[boom3] HDR: paper white %.0f nits, "
+						"peak %.0f nits, headroom %.2fx\n", paperWhite, maxNits, H );
+				if ( H < 1.0001f ) {
+					log_cb( RETRO_LOG_WARN, "[boom3] HDR: no headroom above "
+							"paper white, so the display transform is bypassed and "
+							"every curve looks the same - raise the peak luminance "
+							"above the paper white in the frontend's HDR settings, or "
+							"set HDR: Display Peak Luminance\n" );
+				}
+			}
+		}
+	}
+
 	glDisable( GL_DEPTH_TEST );
 	glDisable( GL_STENCIL_TEST );
 	glDisable( GL_BLEND );
