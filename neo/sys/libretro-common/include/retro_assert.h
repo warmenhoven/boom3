@@ -1,7 +1,7 @@
 /* Copyright  (C) 2010-2020 The RetroArch team
  *
  * ---------------------------------------------------------------------------------------
- * The following license statement only applies to this file (compat_strl.c).
+ * The following license statement only applies to this file (retro_assert.h).
  * ---------------------------------------------------------------------------------------
  *
  * Permission is hereby granted, free of charge,
@@ -20,33 +20,16 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
 
-#include <compat/strl.h>
+#ifndef __RETRO_ASSERT_H
+#define __RETRO_ASSERT_H
 
-/* Implementation of strlcpy()/strlcat() based on OpenBSD. */
+#include <assert.h>
 
-#if !(defined(__MACH__) && defined(__APPLE__))
-size_t strlcpy(char *s, const char *in, size_t len)
-{
-   size_t src_len = strlen(in);
-   if (len)
-   {
-      size_t cpy_len = src_len < len - 1 ? src_len : len - 1;
-      memcpy(s, in, cpy_len);
-      s[cpy_len] = '\0';
-   }
-   return src_len;
-}
+#ifdef RARCH_INTERNAL
+#include <stdio.h>
+#define retro_assert(cond) ((void)( (cond) || (printf("Assertion failed at %s:%d.\n", __FILE__, __LINE__), abort(), 0) ))
+#else
+#define retro_assert(cond) assert(cond)
+#endif
 
-/* The destination scan is bounded by 'len': 's' is not required to
- * contain a NUL within the first 'len' bytes. When it does not, no
- * bytes are written and the return value is len + strlen(source),
- * matching OpenBSD, Darwin and glibc. */
-size_t strlcat(char *s, const char *source, size_t len)
-{
-   const char *nul = (const char*)memchr(s, 0, len);
-   size_t dst_len  = nul ? (size_t)(nul - s) : len;
-   if (dst_len == len)
-      return len + strlen(source);
-   return dst_len + strlcpy(s + dst_len, source, len - dst_len);
-}
 #endif

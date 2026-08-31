@@ -209,6 +209,40 @@
 #define DT_POOL_SLOT    (1024 * 1024)
 #define DT_POOL_SLOTS   4
 
+/* Some Darwin deployment targets have no thread-local storage: clang
+ * rejects __thread outright below macOS 10.7, iOS 9 on 32-bit devices
+ * (iOS 8 on 64-bit), iOS 10 in the 32-bit simulator, and watchOS 2
+ * (clang/lib/Basic/Targets/OSTargets.h).  This is a property of the
+ * -m*-version-min value, not of the architecture: the libretro ios9
+ * platform trips it because it builds armv7 with
+ * -miphoneos-version-min=8.0, while the same armv7 with a 9.0 minimum
+ * compiles __thread fine.  clang's __has_feature(tls) reports exactly
+ * this predicate, so ask it; without TLS the pool would be
+ * unsynchronised shared state, which this module promises not to
+ * have, so it is compiled out instead -- every load then falls
+ * through to a fresh reservation, the same behaviour as a pool miss.
+ * (GCC also answers __has_feature(tls), unconditionally true from
+ * GCC 14, which is correct there: GCC lowers __thread through emutls
+ * on targets without native TLS.) */
+#if defined(__has_feature)
+#if !__has_feature(tls)
+#define DT_NO_POOL
+#endif
+#endif
+
+/* The console targets have no native TLS: GCC lowers __thread there
+ * through emutls, which is a per-access table lookup plus a gthread
+ * mutex on the control path - on Vita that mutex is the toolchain's
+ * pthread port, the only thing left asking for it.  That costs more
+ * than the pool miss the cache exists to avoid, so the pool is
+ * compiled out and every load takes the fresh-reservation path. */
+#if defined(VITA) || defined(PSP) || defined(_3DS) || defined(GEKKO)
+#define DT_NO_POOL
+#endif
+#endif
+
+#if !defined(DT_NO_POOL)
+
 #if !defined(HAVE_THREADS)
 #define DT_TLS
 #elif defined(_MSC_VER)
@@ -572,6 +606,46 @@ bool data_transfer_window_extend(data_transfer_t *dt, size_t hi)
    return true;
 }
 
+bool data_transfer_window_ensure(data_transfer_t *dt, size_t lo,
+      size_t hi)
+{
+   if (!dt || !dt->window || dt->failed)
+      return false;
+   if (hi > dt->len)
+      hi = dt->len;
+   if (lo >= hi)
+      return true;
+   if (!dt->map_len)
+      return true;               /* fallback: whole file resident */
+   if (!data_transfer_wcommit(dt, lo, hi))
+   {
+      data_transfer_wfail(dt);
+      return false;
+   }
+   if (!data_transfer_read_at(dt, lo, dt->map + lo, hi - lo))
+   {
+      data_transfer_wfail(dt);
+      return false;
+   }
+   return true;
+}
+
+void data_transfer_window_rebase(data_transfer_t *dt, size_t pos)
+{
+   size_t p;
+   if (!dt || !dt->window || !dt->map_len || dt->failed)
+      return;
+   if (pos > dt->len)
+      pos = dt->len;
+   p = (pos / dt->page) * dt->page;
+   if (p <= dt->whi)
+      return;                    /* frontier already covers it */
+   dt->wlo    = p;
+   dt->whi    = p;
+   dt->wfreed = p;
+   return;
+}
+
 void data_transfer_window_advance(data_transfer_t *dt, size_t lo)
 {
    if (!dt || !dt->window || !dt->map_len || dt->failed)
@@ -677,9 +751,14 @@ void data_transfer_window_punch(data_transfer_t *dt, size_t from,
 #endif
 }
 
-bool data_transfer_window_feed(data_transfer_t *dt, size_t tell,
-      size_t lookahead, size_t margin)
+bool data_transfer_window_feed_budget(data_transfer_t *dt, size_t tell,
+      size_t lookahead, size_t margin, size_t budget,
+      size_t *resident_hi)
 {
+   bool ok;
+   size_t hi;
+   if (resident_hi)
+      *resident_hi = 0;
    if (!dt || !dt->window || dt->failed)
       return false;
    if (tell < dt->wtell)
@@ -687,7 +766,31 @@ bool data_transfer_window_feed(data_transfer_t *dt, size_t tell,
    dt->wtell = tell;
    if (tell > margin && tell - margin > dt->wlo)
       data_transfer_window_advance(dt, tell - margin);
-   return data_transfer_window_extend(dt, tell + lookahead);
+   hi = tell + lookahead;
+   /* The ceiling applies only while the frontier covers the consumer.
+    * A frontier behind tell means the consumer's next read lands on
+    * unresident pages, and pacing THAT read over ticks is not a
+    * smaller burst, it is a fault: close the gap in one extend, as
+    * the unbudgeted feed always has. */
+   if (budget && dt->whi >= tell)
+   {
+      size_t cap = dt->whi + budget;
+      if (cap < dt->whi)                 /* wrapped: no ceiling */
+         cap = (size_t)-1;
+      if (hi > cap)
+         hi = cap;
+   }
+   ok = data_transfer_window_extend(dt, hi);
+   if (resident_hi)
+      *resident_hi = dt->map_len ? dt->whi : dt->len;
+   return ok;
+}
+
+bool data_transfer_window_feed(data_transfer_t *dt, size_t tell,
+      size_t lookahead, size_t margin)
+{
+   return data_transfer_window_feed_budget(dt, tell, lookahead,
+         margin, 0, NULL);
 }
 
 static data_transfer_t *data_transfer_open_prefix_ex(const char *path,

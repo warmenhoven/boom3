@@ -120,7 +120,7 @@ typedef struct rarch_sinc_resampler
    } while (0)
 
 
-#if (defined(__ARM_NEON__) || defined(HAVE_NEON))
+#if (defined(__ARM_NEON) || defined(__ARM_NEON__) || defined(HAVE_NEON))
 
 #ifdef HAVE_ARM_NEON_ASM_OPTIMIZATIONS
 void process_sinc_neon_asm(float *out, const float *left,
@@ -947,7 +947,7 @@ static void *resampler_sinc_new(const struct resampler_config *config,
    }
    else if (mask & RESAMPLER_SIMD_NEON)
    {
-#if (defined(__ARM_NEON__) || defined(HAVE_NEON))
+#if (defined(__ARM_NEON) || defined(__ARM_NEON__) || defined(HAVE_NEON))
 #ifdef HAVE_ARM_NEON_ASM_OPTIMIZATIONS
       if (window_type != SINC_WINDOW_KAISER)
          re->process = resampler_sinc_process_neon;
@@ -986,6 +986,15 @@ retro_resampler_t sinc_resampler = {
 #if defined(__GNUC__) && defined(__OPTIMIZE__) && !defined(__clang__)
 #pragma GCC pop_options
 #endif
+
+/* ---------------------------------------------------------------------
+ * boom3-local additions, re-applied over each upstream resync.  These are
+ * NOT in RetroArch's copy of this file.  snd_decoder.cpp declares them
+ * extern "C" and uses them for streaming-decoder savestate continuity and
+ * handle reuse.  The state layout (4*taps ring + ptr + time) is part of
+ * the savestate format; layout assumptions verified against this
+ * revision: buffer_r = buffer_l + 2*taps, ptr unsigned, time uint32_t.
+ * ------------------------------------------------------------------- */
 /* Local addition (not yet upstream): return a handle to its exact
  * post-init state so callers can reuse the expensive filter table across
  * streams. A fresh handle differs from a used one only in the ring
