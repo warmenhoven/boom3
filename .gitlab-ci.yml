@@ -144,6 +144,12 @@ android-x86_64:
     - .libretro-android-make-x86_64
     - .core-defs
 
+# Android x86
+android-x86:
+  extends:
+    - .libretro-android-make-x86
+    - .core-defs
+
 # iOS
 libretro-build-ios-arm64:
   extends:
